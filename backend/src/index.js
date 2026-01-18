@@ -25,15 +25,23 @@ app.use(compression({
   }
 }));
 
-// Performance: Optimize CORS preflight caching
+// CORS Configuration for Development and Production
+// Development: Allows localhost origins
+// Production: Only allows origins specified in FRONTEND_URL
 const allowedOrigins = process.env.FRONTEND_URL 
   ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
   : ['http://localhost:5173', 'http://localhost:4173'];
 
-// Cache allowed origins check for better performance
+// Helper function to check if origin is allowed
 const isOriginAllowed = (origin) => {
+  // Allow requests with no origin (like mobile apps or curl requests)
   if (!origin) return true;
-  return allowedOrigins.includes(origin) || allowedOrigins.some(allowed => origin?.startsWith(allowed));
+  
+  // Check exact match
+  if (allowedOrigins.includes(origin)) return true;
+  
+  // Check if origin starts with any allowed origin (for subdomains)
+  return allowedOrigins.some(allowed => origin.startsWith(allowed));
 };
 
 app.use(cors({
@@ -43,8 +51,10 @@ app.use(cors({
     } else {
       // In production, be strict; in development, allow localhost
       if (process.env.NODE_ENV === 'production') {
+        console.warn(`⚠️  CORS blocked origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       } else {
+        // In development, allow all origins for easier testing
         callback(null, true);
       }
     }
