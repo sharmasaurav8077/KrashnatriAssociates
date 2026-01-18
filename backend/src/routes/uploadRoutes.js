@@ -32,10 +32,12 @@ const handleMulterError = (err, req, res, next) => {
 
 /**
  * Get gallery images
- * GET /gallery
+ * GET / (when mounted at /gallery) -> /api/gallery
+ * GET /gallery (when mounted at /upload) -> /api/upload/gallery
  * Returns all images from gallery.json
  */
-router.get('/gallery', getGalleryImages);
+router.get('/', getGalleryImages);
+router.get('/gallery', getGalleryImages); // For backward compatibility when mounted at /upload
 
 /**
  * Upload gallery image

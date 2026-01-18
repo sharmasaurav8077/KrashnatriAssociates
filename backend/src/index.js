@@ -119,8 +119,12 @@ process.on('uncaughtException', (error) => {
 
 // Start server
 const server = app.listen(PORT, '0.0.0.0', () => {
+  const env = process.env.NODE_ENV || 'development';
   console.log(`🚀 Server is running on port ${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📡 Environment: ${env}`);
+  if (env === 'production') {
+    console.log('✅ Production mode enabled');
+  }
   console.log(`🌐 CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
 });
 

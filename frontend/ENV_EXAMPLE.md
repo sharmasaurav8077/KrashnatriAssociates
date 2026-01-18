@@ -14,7 +14,15 @@ VITE_API_URL=http://localhost:4000/api
 Add the following environment variable in Vercel Dashboard:
 
 ```env
-VITE_API_URL=https://your-backend-app.railway.app/api
+VITE_API_URL=https://ideal-commitment-production-0985.up.railway.app/api
 ```
 
-Replace `your-backend-app.railway.app` with your actual Railway backend URL.
+**Important**: Replace with your actual Railway backend URL if different.
+
+### Setting Environment Variables in Vercel
+
+1. Go to your project in Vercel Dashboard
+2. Navigate to **Settings** → **Environment Variables**
+3. Add `VITE_API_URL` with your Railway backend URL + `/api`
+4. Select **Production** environment
+5. Save and redeploy
