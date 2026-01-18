@@ -24,12 +24,22 @@ const createTransporter = () => {
   }
 
   return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: false, // true for 465, false for other ports
     auth: {
       user: EMAIL_USER,
       pass: EMAIL_PASS
+    },
+    // Connection timeout settings for Railway/production
+    connectionTimeout: 10000, // 10 seconds to establish connection
+    greetingTimeout: 10000, // 10 seconds for SMTP greeting
+    socketTimeout: 10000, // 10 seconds for socket operations
+    // Retry configuration
+    pool: false, // Disable connection pooling for better reliability
+    // TLS options for secure connections
+    tls: {
+      rejectUnauthorized: false // Allow self-signed certificates if needed
     }
   });
 };
@@ -66,7 +76,28 @@ export const sendMail = async ({ subject, html }) => {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    // Verify transporter connection before sending (with timeout)
+    try {
+      await Promise.race([
+        transporter.verify(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('SMTP verification timeout')), 5000)
+        )
+      ]);
+      console.log('✅ SMTP connection verified');
+    } catch (verifyError) {
+      console.warn('⚠️  SMTP verification failed, but attempting to send anyway:', verifyError.message);
+      // Continue with sending even if verification fails
+    }
+
+    // Send email with timeout protection
+    const info = await Promise.race([
+      transporter.sendMail(mailOptions),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Email send timeout after 15 seconds')), 15000)
+      )
+    ]);
+
     console.log('✅ Email sent successfully:', {
       messageId: info.messageId,
       to: ADMIN_EMAIL,
@@ -79,6 +110,19 @@ export const sendMail = async ({ subject, html }) => {
     };
   } catch (error) {
     console.error('❌ Error sending email:', error);
-    throw new Error(`Failed to send email: ${error.message}`);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to send email';
+    if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
+      errorMessage = 'Email service timeout. Please check SMTP configuration and network connectivity.';
+    } else if (error.code === 'EAUTH') {
+      errorMessage = 'Email authentication failed. Please check SMTP credentials.';
+    } else if (error.code === 'ECONNREFUSED') {
+      errorMessage = 'Cannot connect to SMTP server. Please check SMTP_HOST and SMTP_PORT.';
+    } else {
+      errorMessage = `Failed to send email: ${error.message}`;
+    }
+    
+    throw new Error(errorMessage);
   }
 };
