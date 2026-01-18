@@ -29,29 +29,54 @@ app.use(compression({
 // Development: Allows localhost origins
 // Production: Only allows origins specified in FRONTEND_URL
 const allowedOrigins = process.env.FRONTEND_URL 
-  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim()).filter(url => url.length > 0)
   : ['http://localhost:5173', 'http://localhost:4173'];
+
+// Log allowed origins on startup for debugging
+console.log('🔐 CORS Allowed Origins:', allowedOrigins);
 
 // Helper function to check if origin is allowed
 const isOriginAllowed = (origin) => {
   // Allow requests with no origin (like mobile apps or curl requests)
   if (!origin) return true;
   
-  // Check exact match
-  if (allowedOrigins.includes(origin)) return true;
+  // Normalize origin (remove trailing slash)
+  const normalizedOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   
-  // Check if origin starts with any allowed origin (for subdomains)
-  return allowedOrigins.some(allowed => origin.startsWith(allowed));
+  // Check exact match (case-insensitive)
+  const exactMatch = allowedOrigins.some(allowed => {
+    const normalizedAllowed = allowed.endsWith('/') ? allowed.slice(0, -1) : allowed;
+    return normalizedOrigin.toLowerCase() === normalizedAllowed.toLowerCase();
+  });
+  
+  if (exactMatch) return true;
+  
+  // Check if origin matches any allowed origin (for subdomains and variations)
+  const prefixMatch = allowedOrigins.some(allowed => {
+    const normalizedAllowed = allowed.endsWith('/') ? allowed.slice(0, -1) : allowed;
+    return normalizedOrigin.toLowerCase().startsWith(normalizedAllowed.toLowerCase());
+  });
+  
+  return prefixMatch;
 };
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Log origin for debugging
+    if (process.env.NODE_ENV === 'production') {
+      console.log(`🌐 CORS check - Origin: ${origin || 'no origin'}`);
+    }
+    
     if (isOriginAllowed(origin)) {
+      if (process.env.NODE_ENV === 'production') {
+        console.log(`✅ CORS allowed for origin: ${origin || 'no origin'}`);
+      }
       callback(null, true);
     } else {
       // In production, be strict; in development, allow localhost
       if (process.env.NODE_ENV === 'production') {
         console.warn(`⚠️  CORS blocked origin: ${origin}`);
+        console.warn(`   Allowed origins: ${allowedOrigins.join(', ')}`);
         callback(new Error('Not allowed by CORS'));
       } else {
         // In development, allow all origins for easier testing
@@ -60,8 +85,9 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key', 'Accept', 'Origin', 'X-Requested-With'],
+  exposedHeaders: ['X-Response-Time'],
   maxAge: 86400 // Cache preflight requests for 24 hours
 }));
 
@@ -126,6 +152,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('✅ Production mode enabled');
   }
   console.log(`🌐 CORS enabled for: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+  console.log(`🔐 Allowed origins: ${allowedOrigins.join(', ')}`);
 });
 
 // Handle server errors
