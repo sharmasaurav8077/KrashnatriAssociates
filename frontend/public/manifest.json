@@ -1,0 +1,26 @@
+{
+  "name": "Krashnatri Associates",
+  "short_name": "Krashnatri",
+  "description": "Professional topographic survey, land survey, and DGPS survey services in Meerut, India",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0C1B45",
+  "theme_color": "#0B2254",
+  "icons": [
+    {
+      "src": "/ka-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/ka-icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/ka-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
