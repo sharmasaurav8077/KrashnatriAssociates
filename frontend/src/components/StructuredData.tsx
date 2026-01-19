@@ -7,7 +7,7 @@ interface StructuredDataProps {
 
 const StructuredData = ({ type = 'default' }: StructuredDataProps) => {
   const location = useLocation();
-  const baseUrl = 'https://www.krashnatriassociates.com';
+  const baseUrl = 'https://krashnatriassociates.com';
   const url = `${baseUrl}${location.pathname}`;
 
   // Organization Schema
@@ -96,22 +96,14 @@ const StructuredData = ({ type = 'default' }: StructuredDataProps) => {
     ],
     priceRange: '$$',
     areaServed: [
-      {
-        '@type': 'Country',
-        name: 'India'
-      },
-      {
-        '@type': 'State',
-        name: 'Uttar Pradesh'
-      },
-      {
-        '@type': 'City',
-        name: 'Meerut'
-      }
+      { '@type': 'Country', name: 'India', addressCountry: 'IN' },
+      { '@type': 'State', name: 'Uttar Pradesh' },
+      { '@type': 'City', name: 'Meerut' }
     ],
     aggregateRating: {
       '@type': 'AggregateRating',
       ratingValue: 4.8,
+      ratingCount: 50,
       reviewCount: 50,
       bestRating: 5,
       worstRating: 1
@@ -141,18 +133,9 @@ const StructuredData = ({ type = 'default' }: StructuredDataProps) => {
       worstRating: 1
     },
     areaServed: [
-      {
-        '@type': 'Country',
-        name: 'India'
-      },
-      {
-        '@type': 'State',
-        name: 'Uttar Pradesh'
-      },
-      {
-        '@type': 'City',
-        name: 'Meerut'
-      }
+      { '@type': 'Country', name: 'India', addressCountry: 'IN' },
+      { '@type': 'State', name: 'Uttar Pradesh' },
+      { '@type': 'City', name: 'Meerut' }
     ],
     hasOfferCatalog: {
       '@type': 'OfferCatalog',
