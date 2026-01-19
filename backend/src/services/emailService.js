@@ -23,24 +23,32 @@ const createTransporter = () => {
     return null;
   }
 
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+  const isSecure = smtpPort === 465 || process.env.SMTP_SECURE === 'true';
+  
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: false, // true for 465, false for other ports
+    port: smtpPort,
+    secure: isSecure, // true for 465 (SSL), false for 587 (TLS)
     auth: {
       user: EMAIL_USER,
       pass: EMAIL_PASS
     },
-    // Connection timeout settings for Railway/production
-    connectionTimeout: 10000, // 10 seconds to establish connection
-    greetingTimeout: 10000, // 10 seconds for SMTP greeting
-    socketTimeout: 10000, // 10 seconds for socket operations
+    // Increased timeout settings for Railway/production (Gmail can be slow)
+    connectionTimeout: 30000, // 30 seconds to establish connection (increased from 10s)
+    greetingTimeout: 30000, // 30 seconds for SMTP greeting (increased from 10s)
+    socketTimeout: 30000, // 30 seconds for socket operations (increased from 10s)
     // Retry configuration
     pool: false, // Disable connection pooling for better reliability
-    // TLS options for secure connections
+    // TLS options for Gmail (port 587 requires TLS)
+    requireTLS: !isSecure, // Require TLS for port 587
     tls: {
-      rejectUnauthorized: false // Allow self-signed certificates if needed
-    }
+      rejectUnauthorized: true, // Verify SSL certificate (Gmail has valid cert)
+      minVersion: 'TLSv1.2' // Use TLS 1.2 or higher
+    },
+    // Debug logging for production troubleshooting
+    debug: process.env.NODE_ENV === 'production' ? false : false, // Set to true for detailed logs
+    logger: process.env.NODE_ENV === 'production' ? false : false // Set to true for detailed logs
   });
 };
 
@@ -76,25 +84,27 @@ export const sendMail = async ({ subject, html }) => {
   };
 
   try {
-    // Verify transporter connection before sending (with timeout)
-    try {
-      await Promise.race([
-        transporter.verify(),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('SMTP verification timeout')), 5000)
-        )
-      ]);
-      console.log('✅ SMTP connection verified');
-    } catch (verifyError) {
-      console.warn('⚠️  SMTP verification failed, but attempting to send anyway:', verifyError.message);
-      // Continue with sending even if verification fails
+    // Skip verification in production to avoid timeout (Gmail can be slow from Railway)
+    // Verification will happen during actual send
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        await Promise.race([
+          transporter.verify(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('SMTP verification timeout')), 10000)
+          )
+        ]);
+        console.log('✅ SMTP connection verified');
+      } catch (verifyError) {
+        console.warn('⚠️  SMTP verification failed, but attempting to send anyway:', verifyError.message);
+      }
     }
 
-    // Send email with timeout protection
+    // Send email with increased timeout (Gmail from Railway can take time)
     const info = await Promise.race([
       transporter.sendMail(mailOptions),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Email send timeout after 15 seconds')), 15000)
+        setTimeout(() => reject(new Error('Email send timeout after 30 seconds')), 30000)
       )
     ]);
 
@@ -110,15 +120,33 @@ export const sendMail = async ({ subject, html }) => {
     };
   } catch (error) {
     console.error('❌ Error sending email:', error);
+    console.error('   Error code:', error.code);
+    console.error('   Error command:', error.command);
+    console.error('   SMTP Host:', process.env.SMTP_HOST || 'smtp.gmail.com');
+    console.error('   SMTP Port:', process.env.SMTP_PORT || '587');
+    console.error('   SMTP User:', process.env.SMTP_USER ? `${process.env.SMTP_USER.substring(0, 3)}***` : 'NOT SET');
     
     // Provide more specific error messages
     let errorMessage = 'Failed to send email';
     if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
-      errorMessage = 'Email service timeout. Please check SMTP configuration and network connectivity.';
+      errorMessage = 'Email service timeout. Possible causes:\n' +
+        '1. Gmail App Password not used (use App Password, not regular password)\n' +
+        '2. Railway network blocking Gmail SMTP\n' +
+        '3. Gmail blocking Railway IP addresses\n' +
+        'Solution: Verify SMTP_PASS is Gmail App Password, or try port 465 with SMTP_SECURE=true';
     } else if (error.code === 'EAUTH') {
-      errorMessage = 'Email authentication failed. Please check SMTP credentials.';
+      errorMessage = 'Email authentication failed. Please verify:\n' +
+        '1. SMTP_USER is correct Gmail address\n' +
+        '2. SMTP_PASS is Gmail App Password (not regular password)\n' +
+        '3. 2-Step Verification is enabled in Google Account\n' +
+        '4. App Password is generated from Google Account → Security → App Passwords';
     } else if (error.code === 'ECONNREFUSED') {
-      errorMessage = 'Cannot connect to SMTP server. Please check SMTP_HOST and SMTP_PORT.';
+      errorMessage = 'Cannot connect to SMTP server. Please check:\n' +
+        '1. SMTP_HOST is correct (smtp.gmail.com)\n' +
+        '2. SMTP_PORT is correct (587 for TLS, 465 for SSL)\n' +
+        '3. Railway network allows outbound SMTP connections';
+    } else if (error.code === 'ESOCKET') {
+      errorMessage = 'Socket error connecting to SMTP server. Gmail might be blocking Railway IP.';
     } else {
       errorMessage = `Failed to send email: ${error.message}`;
     }
