@@ -52,10 +52,11 @@ const createTransporter = () => {
   });
 };
 
-const transporter = createTransporter();
+// Don't create transporter at module level - create fresh each time for better reliability
+// const transporter = createTransporter();
 
 /**
- * Send email to admin
+ * Send email to admin with retry logic
  * @param {Object} options - Email options
  * @param {string} options.subject - Email subject
  * @param {string} options.html - HTML email body
@@ -65,6 +66,7 @@ export const sendMail = async ({ subject, html }) => {
   // Support both EMAIL_USER/EMAIL_PASS and SMTP_USER/SMTP_PASS for consistency
   const EMAIL_USER = process.env.EMAIL_USER || process.env.SMTP_USER;
 
+  const transporter = createTransporter();
   if (!transporter) {
     const errorMsg = process.env.NODE_ENV === 'production'
       ? 'Email service is not configured. Please contact the administrator.'
@@ -83,74 +85,80 @@ export const sendMail = async ({ subject, html }) => {
     html
   };
 
-  try {
-    // Skip verification in production to avoid timeout (Gmail can be slow from Railway)
-    // Verification will happen during actual send
-    if (process.env.NODE_ENV !== 'production') {
-      try {
-        await Promise.race([
-          transporter.verify(),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('SMTP verification timeout')), 10000)
-          )
-        ]);
-        console.log('✅ SMTP connection verified');
-      } catch (verifyError) {
-        console.warn('⚠️  SMTP verification failed, but attempting to send anyway:', verifyError.message);
+  // Retry logic: Try 3 times with exponential backoff
+  const maxRetries = 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`📧 Attempting to send email (attempt ${attempt}/${maxRetries})...`);
+      
+      // Create fresh transporter for each attempt (helps with connection issues)
+      const freshTransporter = createTransporter();
+      
+      // Send email with timeout (reduced to 20 seconds per attempt)
+      const info = await Promise.race([
+        freshTransporter.sendMail(mailOptions),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email send timeout after 20 seconds')), 20000)
+        )
+      ]);
+
+      console.log('✅ Email sent successfully:', {
+        messageId: info.messageId,
+        to: ADMIN_EMAIL,
+        subject,
+        attempt
+      });
+      return {
+        success: true,
+        messageId: info.messageId,
+        message: 'Email sent successfully'
+      };
+    } catch (error) {
+      lastError = error;
+      console.error(`❌ Email send failed (attempt ${attempt}/${maxRetries}):`, error.message);
+      console.error('   Error code:', error.code);
+      console.error('   Error command:', error.command);
+      
+      // If not the last attempt, wait before retrying (exponential backoff)
+      if (attempt < maxRetries) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s max
+        console.log(`   Retrying in ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
       }
     }
-
-    // Send email with increased timeout (Gmail from Railway can take time)
-    const info = await Promise.race([
-      transporter.sendMail(mailOptions),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Email send timeout after 30 seconds')), 30000)
-      )
-    ]);
-
-    console.log('✅ Email sent successfully:', {
-      messageId: info.messageId,
-      to: ADMIN_EMAIL,
-      subject
-    });
-    return {
-      success: true,
-      messageId: info.messageId,
-      message: 'Email sent successfully'
-    };
-  } catch (error) {
-    console.error('❌ Error sending email:', error);
-    console.error('   Error code:', error.code);
-    console.error('   Error command:', error.command);
-    console.error('   SMTP Host:', process.env.SMTP_HOST || 'smtp.gmail.com');
-    console.error('   SMTP Port:', process.env.SMTP_PORT || '587');
-    console.error('   SMTP User:', process.env.SMTP_USER ? `${process.env.SMTP_USER.substring(0, 3)}***` : 'NOT SET');
-    
-    // Provide more specific error messages
-    let errorMessage = 'Failed to send email';
-    if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
-      errorMessage = 'Email service timeout. Possible causes:\n' +
-        '1. Gmail App Password not used (use App Password, not regular password)\n' +
-        '2. Railway network blocking Gmail SMTP\n' +
-        '3. Gmail blocking Railway IP addresses\n' +
-        'Solution: Verify SMTP_PASS is Gmail App Password, or try port 465 with SMTP_SECURE=true';
-    } else if (error.code === 'EAUTH') {
-      errorMessage = 'Email authentication failed. Please verify:\n' +
-        '1. SMTP_USER is correct Gmail address\n' +
-        '2. SMTP_PASS is Gmail App Password (not regular password)\n' +
-        '3. 2-Step Verification is enabled in Google Account\n' +
-        '4. App Password is generated from Google Account → Security → App Passwords';
-    } else if (error.code === 'ECONNREFUSED') {
-      errorMessage = 'Cannot connect to SMTP server. Please check:\n' +
-        '1. SMTP_HOST is correct (smtp.gmail.com)\n' +
-        '2. SMTP_PORT is correct (587 for TLS, 465 for SSL)\n' +
-        '3. Railway network allows outbound SMTP connections';
-    } else if (error.code === 'ESOCKET') {
-      errorMessage = 'Socket error connecting to SMTP server. Gmail might be blocking Railway IP.';
-    } else {
-      errorMessage = `Failed to send email: ${error.message}`;
-    }
-    
-    throw new Error(errorMessage);
   }
+
+  // All retries failed
+  console.error('❌ All email send attempts failed');
+  console.error('   SMTP Host:', process.env.SMTP_HOST || 'smtp.gmail.com');
+  console.error('   SMTP Port:', process.env.SMTP_PORT || '587');
+  console.error('   SMTP User:', process.env.SMTP_USER ? `${process.env.SMTP_USER.substring(0, 3)}***` : 'NOT SET');
+  console.error('   SMTP Secure:', process.env.SMTP_PORT === '465' || process.env.SMTP_SECURE === 'true' ? 'true (SSL)' : 'false (TLS)');
+  
+  // Provide more specific error messages
+  let errorMessage = 'Failed to send email after 3 attempts';
+  if (lastError && (lastError.code === 'ETIMEDOUT' || lastError.message.includes('timeout'))) {
+    errorMessage = 'Email service timeout after 3 attempts. CRITICAL: Verify SMTP_PASS is Gmail App Password (not regular password).\n' +
+      'Steps:\n' +
+      '1. Go to https://myaccount.google.com/security\n' +
+      '2. Enable 2-Step Verification\n' +
+      '3. Generate App Password: Security → App Passwords → Generate\n' +
+      '4. Copy 16-character password (no spaces)\n' +
+      '5. Update SMTP_PASS in Railway with App Password\n' +
+      '6. If still failing, Gmail may be blocking Railway IPs - consider using SendGrid/Mailgun';
+  } else if (lastError && lastError.code === 'EAUTH') {
+    errorMessage = 'Email authentication failed. CRITICAL: SMTP_PASS must be Gmail App Password.\n' +
+      'Regular Gmail password will NOT work. Generate App Password from Google Account settings.';
+  } else if (lastError && lastError.code === 'ECONNREFUSED') {
+    errorMessage = 'Cannot connect to SMTP server. Check SMTP_HOST and SMTP_PORT settings.';
+  } else if (lastError && lastError.code === 'ESOCKET') {
+    errorMessage = 'Socket error. Gmail may be blocking Railway IP addresses. Consider using alternative email service.';
+  } else if (lastError) {
+    errorMessage = `Failed to send email: ${lastError.message}`;
+  }
+  
+  throw new Error(errorMessage);
 };
