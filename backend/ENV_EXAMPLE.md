@@ -46,7 +46,7 @@ NODE_ENV=production
 PORT=4000
 
 # Frontend URL (comma-separated for multiple origins)
-FRONTEND_URL=https://krashnatri-associates.vercel.app,http://localhost:5173
+FRONTEND_URL=https://krashnatriassociates.com,https://www.krashnatriassociates.com,http://localhost:5173
 
 # MongoDB Connection (MongoDB Atlas)
 MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/krashnatri-associates?retryWrites=true&w=majority

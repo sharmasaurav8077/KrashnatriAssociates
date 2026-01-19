@@ -19,7 +19,7 @@ const SEO = ({
   noindex = false
 }: SEOProps) => {
   const location = useLocation();
-  const baseUrl = 'https://www.krashnatriassociates.com';
+  const baseUrl = 'https://krashnatriassociates.com';
   const url = `${baseUrl}${location.pathname}`;
   const fullImageUrl = image.startsWith('http') ? image : `${baseUrl}${image}`;
 

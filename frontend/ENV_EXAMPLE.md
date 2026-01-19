@@ -14,10 +14,12 @@ VITE_API_URL=http://localhost:4000/api
 Add the following environment variable in Vercel Dashboard:
 
 ```env
-VITE_API_URL=https://ideal-commitment-production-0985.up.railway.app/api
+VITE_API_URL=https://api.krashnatriassociates.com/api
 ```
 
-**Important**: Replace with your actual Railway backend URL if different.
+**Important**: 
+- Replace with your actual Railway backend custom domain if different
+- If using Railway default domain: `https://[your-railway-app].up.railway.app/api`
 
 ### Setting Environment Variables in Vercel
 
