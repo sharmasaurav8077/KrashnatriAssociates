@@ -144,13 +144,19 @@ export const getGalleryImages = async (req, res) => {
       // This will get images from any folder the user uploaded to
       cloudinaryImages = await fetchImagesFromCloudinary(null, { maxResults: 500 });
       
-      if (cloudinaryImages.length > 0) {
-        console.log(`✅ Fetched ${cloudinaryImages.length} images from Cloudinary`);
-      } else {
-        console.log('ℹ️  No images found in Cloudinary, using gallery.json');
+      // Only log in development
+      if (process.env.NODE_ENV !== 'production') {
+        if (cloudinaryImages.length > 0) {
+          console.log(`✅ Fetched ${cloudinaryImages.length} images from Cloudinary`);
+        } else {
+          console.log('ℹ️  No images found in Cloudinary, using gallery.json');
+        }
       }
     } catch (cloudinaryError) {
-      console.error('⚠️  Error fetching from Cloudinary, using gallery.json:', cloudinaryError.message);
+      // Only log in development
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('⚠️  Error fetching from Cloudinary, using gallery.json:', cloudinaryError.message);
+      }
       // Fall back to gallery.json if Cloudinary fetch fails
     }
 
@@ -162,13 +168,23 @@ export const getGalleryImages = async (req, res) => {
     
     // Add Cloudinary images first (they are the source of truth)
     cloudinaryImages.forEach(img => {
-      imageMap.set(img.url, img);
+      if (img && img.url) {
+        imageMap.set(img.url, {
+          url: img.url,
+          publicId: img.publicId || null,
+          timestamp: img.timestamp || Date.now()
+        });
+      }
     });
     
     // Add JSON images that aren't already in Cloudinary
     jsonImages.forEach(img => {
-      if (!imageMap.has(img.url)) {
-        imageMap.set(img.url, img);
+      if (img && img.url && !imageMap.has(img.url)) {
+        imageMap.set(img.url, {
+          url: img.url,
+          publicId: img.publicId || null,
+          timestamp: img.timestamp || Date.now()
+        });
       }
     });
 
@@ -177,7 +193,9 @@ export const getGalleryImages = async (req, res) => {
       return (b.timestamp || 0) - (a.timestamp || 0);
     });
     
-    return res.status(200).json({
+    // Ensure clean JSON response - set headers explicitly
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json({
       success: true,
       message: 'Gallery images retrieved successfully',
       data: {
@@ -185,9 +203,14 @@ export const getGalleryImages = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error in getGalleryImages:', error);
-    // Return empty array on error
-    return res.status(200).json({
+    // Only log in development
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error in getGalleryImages:', error);
+    }
+    
+    // Return clean JSON response with empty array on error
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json({
       success: true,
       message: 'Gallery images retrieved successfully',
       data: {

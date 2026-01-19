@@ -12,16 +12,15 @@ const router = express.Router();
 // Health check route (with caching for performance)
 router.get('/health', (req, res) => {
   // Set cache headers for health check (5 seconds)
+  res.setHeader('Content-Type', 'application/json');
   res.set({
     'Cache-Control': 'public, max-age=5',
-    'X-Response-Time': `${Date.now() - req.startTime || 0}ms`
+    'X-Response-Time': `${Date.now() - (req.startTime || Date.now())}ms`
   });
   
   res.status(200).json({ 
     success: true,
-    status: 'OK', 
-    message: 'Server is running',
-    timestamp: new Date().toISOString()
+    status: 'OK'
   });
 });
 

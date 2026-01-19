@@ -32,14 +32,15 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow Cloudinary resources
 }));
 
-// Force HTTPS in production
+// Force HTTPS in production (only for API routes)
 if (process.env.NODE_ENV === 'production') {
-  app.use((req, res, next) => {
-    if (req.header('x-forwarded-proto') !== 'https') {
-      res.redirect(`https://${req.header('host')}${req.url}`);
-    } else {
-      next();
+  app.use('/api', (req, res, next) => {
+    // Check x-forwarded-proto header (Railway sets this)
+    const proto = req.header('x-forwarded-proto') || req.protocol;
+    if (proto !== 'https') {
+      return res.redirect(301, `https://${req.header('host')}${req.url}`);
     }
+    next();
   });
 }
 
@@ -57,13 +58,22 @@ app.use(compression({
 }));
 
 // CORS Configuration for Development and Production
-// Development: Allows localhost origins
-// Production: Only allows origins specified in FRONTEND_URL
+// Only applied to /api routes
 const allowedOrigins = process.env.FRONTEND_URL 
   ? process.env.FRONTEND_URL.split(',').map(url => url.trim()).filter(url => url.length > 0)
   : ['http://localhost:5173', 'http://localhost:4173'];
 
-// Log allowed origins on startup for debugging
+// Add localhost for development (if not already in FRONTEND_URL)
+if (process.env.NODE_ENV !== 'production') {
+  const localhostOrigins = ['http://localhost:5173', 'http://localhost:4173'];
+  localhostOrigins.forEach(origin => {
+    if (!allowedOrigins.includes(origin)) {
+      allowedOrigins.push(origin);
+    }
+  });
+}
+
+// Log allowed origins on startup
 console.log('🔐 CORS Allowed Origins:', allowedOrigins);
 
 // Helper function to check if origin is allowed
@@ -71,7 +81,7 @@ const isOriginAllowed = (origin) => {
   // Allow requests with no origin (like mobile apps or curl requests)
   if (!origin) return true;
   
-  // Normalize origin (remove trailing slash)
+  // Normalize origin (remove trailing slash and protocol)
   const normalizedOrigin = origin.endsWith('/') ? origin.slice(0, -1) : origin;
   
   // Check exact match (case-insensitive)
@@ -80,47 +90,33 @@ const isOriginAllowed = (origin) => {
     return normalizedOrigin.toLowerCase() === normalizedAllowed.toLowerCase();
   });
   
-  if (exactMatch) return true;
-  
-  // Check if origin matches any allowed origin (for subdomains and variations)
-  const prefixMatch = allowedOrigins.some(allowed => {
-    const normalizedAllowed = allowed.endsWith('/') ? allowed.slice(0, -1) : allowed;
-    return normalizedOrigin.toLowerCase().startsWith(normalizedAllowed.toLowerCase());
-  });
-  
-  return prefixMatch;
+  return exactMatch;
 };
 
-app.use(cors({
+// CORS middleware - only for /api routes
+const corsOptions = {
   origin: (origin, callback) => {
-    // Log origin for debugging
-    if (process.env.NODE_ENV === 'production') {
-      console.log(`🌐 CORS check - Origin: ${origin || 'no origin'}`);
-    }
-    
     if (isOriginAllowed(origin)) {
-      if (process.env.NODE_ENV === 'production') {
-        console.log(`✅ CORS allowed for origin: ${origin || 'no origin'}`);
-      }
       callback(null, true);
     } else {
-      // In production, be strict; in development, allow localhost
       if (process.env.NODE_ENV === 'production') {
         console.warn(`⚠️  CORS blocked origin: ${origin}`);
         console.warn(`   Allowed origins: ${allowedOrigins.join(', ')}`);
-        callback(new Error('Not allowed by CORS'));
-      } else {
-        // In development, allow all origins for easier testing
-        callback(null, true);
       }
+      callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
+  credentials: false, // No credentials needed
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key', 'Accept', 'Origin', 'X-Requested-With'],
   exposedHeaders: ['X-Response-Time'],
-  maxAge: 86400 // Cache preflight requests for 24 hours
-}));
+  maxAge: 86400, // Cache preflight requests for 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS only to /api routes
+app.use('/api', cors(corsOptions));
 
 // Performance: Optimize JSON parsing with limits
 app.use(express.json({ 
